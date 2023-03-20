@@ -1,0 +1,5 @@
+workdirs/03-17_0351
+val: 69.96% vs 76.5% from paper
+real: 73.78% vs 83.1% from paper
+v2: 53.09% vs 64.2% from paper
+
