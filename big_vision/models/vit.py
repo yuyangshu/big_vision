@@ -19,38 +19,12 @@ However, the names of modules are made to match the old ones for easy loading.
 
 from typing import Optional, Sequence, Union
 
-from absl import logging
 from big_vision import utils
 from big_vision.models import common
 import flax
 import flax.linen as nn
 import flax.training.checkpoints
 import jax.numpy as jnp
-import numpy as np
-import scipy.ndimage
-
-
-def posemb_sincos_2d(h, w, width, temperature=10_000., dtype=jnp.float32):
-  """Follows the MoCo v3 logic."""
-  y, x = jnp.mgrid[:h, :w]
-
-  assert width % 4 == 0, "Width must be mult of 4 for sincos posemb"
-  omega = jnp.arange(width // 4) / (width // 4 - 1)
-  omega = 1. / (temperature**omega)
-  y = jnp.einsum("m,d->md", y.flatten(), omega)
-  x = jnp.einsum("m,d->md", x.flatten(), omega)
-  pe = jnp.concatenate([jnp.sin(x), jnp.cos(x), jnp.sin(y), jnp.cos(y)], axis=1)
-  return jnp.asarray(pe, dtype)[None, :, :]
-
-
-def get_posemb(self, typ, seqshape, width, name, dtype=jnp.float32):
-  if typ == "learn":
-    return self.param(name, nn.initializers.normal(stddev=1/np.sqrt(width)),
-                      (1, np.prod(seqshape), width), dtype)
-  elif typ == "sincos2d":
-    return posemb_sincos_2d(*seqshape, width, dtype=dtype)
-  else:
-    raise ValueError(f"Unknown posemb type: {typ}")
 
 
 class MlpBlock(nn.Module):
@@ -155,7 +129,6 @@ class _Model(nn.Module):
   depth: int = 12
   mlp_dim: Optional[int] = None  # Defaults to 4x input dim
   num_heads: int = 12
-  posemb: str = "learn"  # Can also be "sincos2d"
   rep_size: Union[int, bool] = False
   dropout: float = 0.0
   pool_type: str = "gap"  # Can also be "map" or "tok"
@@ -172,10 +145,6 @@ class _Model(nn.Module):
 
     n, h, w, c = x.shape
     x = jnp.reshape(x, [n, h * w, c])
-
-    # Add posemb before adding extra token.
-    x = out["with_posemb"] = x + get_posemb(
-        self, self.posemb, (h, w), c, "pos_embedding", x.dtype)
 
     if self.pool_type == "tok":
       cls = self.param("cls", nn.initializers.zeros, (1, 1, c), x.dtype)
@@ -255,52 +224,11 @@ def decode_variant(variant):
   }
 
 
-def resample_posemb(old, new):
-  """This function implements "high-res finetuning" for transformer models."""
-  # Rescale the grid of position embeddings. Param shape is (1,N,1024)
-  if old.shape == new.shape:
-    return old
-
-  logging.info("ViT: resize %s to %s", old.shape, new.shape)
-  gs_old = int(np.sqrt(old.shape[1]))
-  gs_new = int(np.sqrt(new.shape[1]))
-  logging.info("ViT: grid-size from %s to %s", gs_old, gs_new)
-  grid = old.reshape(gs_old, gs_old, -1)
-
-  zoom = (gs_new/gs_old, gs_new/gs_old, 1)
-  grid = scipy.ndimage.zoom(grid, zoom, order=1)
-  grid = grid.reshape(1, gs_new*gs_new, -1)
-  return jnp.array(grid)
-
-
 def fix_old_checkpoints(params):
   """Fix small bwd incompat that can't be resolved with names in model def."""
 
   params = flax.core.unfreeze(
       flax.training.checkpoints.convert_pre_linen(params))
-
-  # Original ViT paper variant had posemb in a module:
-  if "posembed_input" in params["Transformer"]:
-    logging.info("ViT: Loading and fixing VERY old posemb")
-    posemb = params["Transformer"].pop("posembed_input")
-    params["pos_embedding"] = posemb["pos_embedding"]
-
-  # Widely used version before 2022 had posemb in Encoder:
-  if "pos_embedding" in params["Transformer"]:
-    logging.info("ViT: Loading and fixing old posemb")
-    params["pos_embedding"] = params["Transformer"].pop("pos_embedding")
-
-  # Old vit.py used to first concat [cls] token, then add posemb.
-  # This means a B/32@224px would have 7x7+1 posembs. This is useless and clumsy
-  # so we changed to add posemb then concat [cls]. We can recover the old
-  # checkpoint by manually summing [cls] token and its posemb entry.
-  if "pos_embedding" in params:
-    pe = params["pos_embedding"]
-    if int(np.sqrt(pe.shape[1])) ** 2 + 1 == int(pe.shape[1]):
-      logging.info("ViT: Loading and fixing combined cls+posemb")
-      pe_cls, params["pos_embedding"] = pe[:, :1], pe[:, 1:]
-      if "cls" in params:
-        params["cls"] += pe_cls
 
   # MAP-head variants during ViT-G development had it inlined:
   if "probe" in params:
@@ -313,7 +241,7 @@ def fix_old_checkpoints(params):
 
 
 def load(init_params, init_file, model_cfg, dont_load=()):  # pylint: disable=invalid-name because we had to CamelCase above.
-  """Load init from checkpoint, both old model and this one. +Hi-res posemb."""
+  """Load init from checkpoint, both old model and this one."""
   del model_cfg
 
   init_file = VANITY_NAMES.get(init_file, init_file)
@@ -323,12 +251,6 @@ def load(init_params, init_file, model_cfg, dont_load=()):  # pylint: disable=in
 
   # possibly use the random init for some of the params (such as, the head).
   restored_params = common.merge_params(restored_params, init_params, dont_load)
-
-  # resample posemb if needed.
-  if init_params and "pos_embedding" in init_params:
-    restored_params["pos_embedding"] = resample_posemb(
-        old=restored_params["pos_embedding"],
-        new=init_params["pos_embedding"])
 
   return restored_params
 

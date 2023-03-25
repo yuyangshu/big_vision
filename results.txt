@@ -1,5 +1,15 @@
-workdirs/03-17_0351
-val: 69.96% vs 76.5% from paper
-real: 73.78% vs 83.1% from paper
-v2: 53.09% vs 64.2% from paper
+paper (https://arxiv.org/abs/2205.01580)
+val: 76.5%
+real: 83.1%
+v2: 64.2%
+
+workdirs/03-17_0351 | local execution parameters
+val: 69.96%
+real: 73.78%
+v2: 53.09%
+
+workdirs/03-23_0308 | remove positional encoding
+val: 60.5%
+real: 67.9%
+v2: 48.1%
 
