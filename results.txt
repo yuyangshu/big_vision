@@ -13,3 +13,5 @@ val: 60.5%
 real: 67.9%
 v2: 48.1%
 
+# tried learning rate 0.003, does not converge
+

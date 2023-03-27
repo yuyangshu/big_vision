@@ -67,7 +67,8 @@ def get_config():
   config.model = dict(
       variant='S/16',
       rep_size=True,
-      pool_type='gap'
+      pool_type='gap',
+      posemb='sincos2d',
   )
 
   # Optimizer section
