@@ -32,14 +32,23 @@ import scipy.ndimage
 
 def posemb_sincos_2d(h, w, width, temperature=10_000., dtype=jnp.float32):
   """Follows the MoCo v3 logic."""
+  assert width % 4 == 0, "Width must be mult of 4 for sincos posemb"
+
+  # (14, 14) when image -> (224, 224, 3)
   y, x = jnp.mgrid[:h, :w]
 
-  assert width % 4 == 0, "Width must be mult of 4 for sincos posemb"
+  # (192,)
   omega = jnp.arange(width // 4) / (width // 4 - 1)
   omega = 1. / (temperature**omega)
+
+  # (196, 192)
   y = jnp.einsum("m,d->md", y.flatten(), omega)
   x = jnp.einsum("m,d->md", x.flatten(), omega)
+
+  # (196, 768)
   pe = jnp.concatenate([jnp.sin(x), jnp.cos(x), jnp.sin(y), jnp.cos(y)], axis=1)
+
+  # (1, 196, 768)
   return jnp.asarray(pe, dtype)[None, :, :]
 
 
@@ -162,18 +171,27 @@ class _Model(nn.Module):
   head_zeroinit: bool = True
 
   @nn.compact
+  # image -> (224, 224, 3)
   def __call__(self, image, *, train=False):
     out = {}
 
     # Patch extraction
+    # https://flax.readthedocs.io/en/latest/api_reference/_autosummary/flax.linen.Conv.html
+    # x -> (n, 14, 14, 768)
     x = out["stem"] = nn.Conv(
         self.width, self.patch_size, strides=self.patch_size,
         padding="VALID", name="embedding")(image)
 
+    # n -> n, h -> 14, w -> 14, c -> 768
     n, h, w, c = x.shape
+    # x.shape -> (n, 196, 768)
     x = jnp.reshape(x, [n, h * w, c])
 
     # Add posemb before adding extra token.
+    # get_posemb(self, self.posemb, (14, 14), 768, "pos_embedding", x.dtype)
+    # if "learn", self.param(name, normal, (1, 196, 768), dtype)
+    # if "sincos2d", same shape (1, 196, 768)
+    # x.shape -> (n, 196, 768)
     x = out["with_posemb"] = x + get_posemb(
         self, self.posemb, (h, w), c, "pos_embedding", x.dtype)
 
