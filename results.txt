@@ -15,3 +15,9 @@ v2: 48.1%
 
 # tried learning rate 0.003, does not converge
 
+workdirs/04-09_0110 | patches + learned pos emb
+val: 64.39%
+real: 72.14%
+v2: 51.59%
+
+

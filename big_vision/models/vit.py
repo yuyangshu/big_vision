@@ -25,6 +25,7 @@ from big_vision.models import common
 import flax
 import flax.linen as nn
 import flax.training.checkpoints
+import jax.image as jmg
 import jax.numpy as jnp
 import numpy as np
 import scipy.ndimage
@@ -171,29 +172,55 @@ class _Model(nn.Module):
   head_zeroinit: bool = True
 
   @nn.compact
-  # image -> (224, 224, 3)
+  # image -> (n, 224, 224, 3)
   def __call__(self, image, *, train=False):
     out = {}
+    n = image.shape[0]
 
-    # Patch extraction
-    # https://flax.readthedocs.io/en/latest/api_reference/_autosummary/flax.linen.Conv.html
-    # x -> (n, 14, 14, 768)
-    x = out["stem"] = nn.Conv(
-        self.width, self.patch_size, strides=self.patch_size,
-        padding="VALID", name="embedding")(image)
+    image_128 = jmg.resize(image, (n, 128, 128, 3), "bilinear")
+    image_64 = jmg.resize(image, (n, 64, 64, 3), "bilinear")
+    image_32 = jmg.resize(image, (n, 32, 32, 3), "bilinear")
+    image_16 = jmg.resize(image, (n, 16, 16, 3), "bilinear")
+
+    # Patch extraction # out["stem"]
+    x_224 = nn.Conv(
+      self.width, self.patch_size, strides=self.patch_size,
+      padding="VALID", name="embedding_224")(image)
+    x_128 = nn.Conv(
+      self.width, self.patch_size, strides=self.patch_size,
+      padding="VALID", name="embedding_128")(image_128)
+    x_64 = nn.Conv(
+      self.width, self.patch_size, strides=self.patch_size,
+      padding="VALID", name="embedding_64")(image_64)
+    x_32 = nn.Conv(
+      self.width, self.patch_size, strides=self.patch_size,
+      padding="VALID", name="embedding_32")(image_32)
+    x_16 = nn.Conv(
+      self.width, self.patch_size, strides=self.patch_size,
+      padding="VALID", name="embedding_16")(image_16)
 
     # n -> n, h -> 14, w -> 14, c -> 768
-    n, h, w, c = x.shape
+    # n, h, w, c = x.shape
     # x.shape -> (n, 196, 768)
-    x = jnp.reshape(x, [n, h * w, c])
+    # x = jnp.reshape(x, [n, h * w, c])
+    x_224 = jnp.reshape(x_224, (n, 14 * 14, self.width))
+    x_128 = jnp.reshape(x_128, (n, 8 * 8, self.width))
+    x_64 = jnp.reshape(x_64, (n, 4 * 4, self.width))
+    x_32 = jnp.reshape(x_32, (n, 2 * 2, self.width))
+    x_16 = jnp.reshape(x_16, (n, 1 * 1, self.width))
 
-    # Add posemb before adding extra token.
-    # get_posemb(self, self.posemb, (14, 14), 768, "pos_embedding", x.dtype)
+    # Add posemb before adding extra token. # out["with_posemb"]
     # if "learn", self.param(name, normal, (1, 196, 768), dtype)
     # if "sincos2d", same shape (1, 196, 768)
     # x.shape -> (n, 196, 768)
-    x = out["with_posemb"] = x + get_posemb(
-        self, self.posemb, (h, w), c, "pos_embedding", x.dtype)
+    x_224 += get_posemb(self, self.posemb, (14, 14), self.width, "pos_embedding_224", x_224.dtype)
+    x_128 += get_posemb(self, self.posemb, (8, 8), self.width, "pos_embedding_128", x_128.dtype)
+    x_64 += get_posemb(self, self.posemb, (4, 4), self.width, "pos_embedding_64", x_64.dtype)
+    x_32 += get_posemb(self, self.posemb, (2, 2), self.width, "pos_embedding_32", x_32.dtype)
+    x_16 += get_posemb(self, self.posemb, (1, 1), self.width, "pos_embedding_16", x_16.dtype)
+
+    # (n, 281, 768)  # 281 = 14 * 14 + 8 * 8 + 4 * 4 + 2 * 2 + 1 * 1
+    x = jnp.concatenate((x_16, x_32, x_64, x_128, x_224), axis=1)
 
     if self.pool_type == "tok":
       cls = self.param("cls", nn.initializers.zeros, (1, 1, c), x.dtype)
@@ -224,23 +251,23 @@ class _Model(nn.Module):
     else:
       raise ValueError(f"Unknown pool type: '{self.pool_type}'")
 
-    x_2d = jnp.reshape(encoded, [n, h, w, -1])
+    # x_2d = jnp.reshape(encoded, [n, h, w, -1])
 
     if self.rep_size:
       rep_size = self.width if self.rep_size is True else self.rep_size
       hid = nn.Dense(rep_size, name="pre_logits")
       # NOTE: In the past we did not include tanh in pre_logits.
       # For few-shot, it should not matter much, as it whitens anyways.
-      x_2d = nn.tanh(hid(x_2d))
+      # x_2d = nn.tanh(hid(x_2d))
       x = nn.tanh(hid(x))
 
-    out["pre_logits_2d"] = x_2d
+    # out["pre_logits_2d"] = x_2d
     out["pre_logits"] = x
 
     if self.num_classes:
       kw = {"kernel_init": nn.initializers.zeros} if self.head_zeroinit else {}
       head = nn.Dense(self.num_classes, name="head", **kw)
-      x_2d = out["logits_2d"] = head(x_2d)
+      # x_2d = out["logits_2d"] = head(x_2d)
       x = out["logits"] = head(x)
 
     return x, out
