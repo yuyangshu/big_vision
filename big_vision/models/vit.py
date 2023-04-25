@@ -17,6 +17,7 @@
 However, the names of modules are made to match the old ones for easy loading.
 """
 
+from math import ceil, log
 from typing import Optional, Sequence, Union
 
 from absl import logging
@@ -26,6 +27,7 @@ import flax
 import flax.linen as nn
 import flax.training.checkpoints
 import jax.image as jmg
+import jax.lax as lax
 import jax.numpy as jnp
 import numpy as np
 import scipy.ndimage
@@ -53,12 +55,44 @@ def posemb_sincos_2d(h, w, width, temperature=10_000., dtype=jnp.float32):
   return jnp.asarray(pe, dtype)[None, :, :]
 
 
+def posemb_sincos_1d(l, width, temperature=10_000., dtype=jnp.float32):
+  """Follows attention is all you need"""
+  def P(v):
+    # v: [15, 15, ..., 15], (768,)
+
+    # [0, 1, ... 767]
+    index = jnp.arange(width)
+    # [0, 0, , 0.0026, 0.0026, ..., 0.9974, 0.9974]
+    # 0.0026 = 2 / 768, 0.9974 = 766/768
+    # y = 2 * jnp.right_shift(index, 1) / width
+    # [15, 15, 14.6445, 14.6445, ..., 0.0015, 0.0015]
+    y = v / temperature ** (2 * jnp.right_shift(index, 1) / width)
+
+    # [0.65028787 -0.7596879   0.8740425  -0.48584944, ..., 0.00153641  0.9999988]
+    return lax.select(jnp.bitwise_and(index, 1), jnp.cos(y), jnp.sin(y))
+
+  # x [[  0   0   0 ...   0   0   0]
+  #  [  1   1   1 ...   1   1   1]
+  #  ...
+  #  [280 280 280 ... 280 280 280]] (281, 768)
+  x = jnp.mgrid[:l, :width][0]
+
+  # sin(15/(10000^(2/768))) = 0.87404262115
+  # pe[15] = [ 0.65028787 -0.7596879   0.8740425  -0.48584944, ..., 0.00153641  0.9999988 ], (281, 768)
+  pe = jnp.apply_along_axis(P, 1, x)
+
+  # (1, 281, 768)
+  return jnp.asarray(pe, dtype)[None, :, :]
+
+
 def get_posemb(self, typ, seqshape, width, name, dtype=jnp.float32):
   if typ == "learn":
     return self.param(name, nn.initializers.normal(stddev=1/np.sqrt(width)),
                       (1, np.prod(seqshape), width), dtype)
   elif typ == "sincos2d":
     return posemb_sincos_2d(*seqshape, width, dtype=dtype)
+  elif typ == "sincos1d":
+    return posemb_sincos_1d(seqshape[1], width, dtype=dtype)
   else:
     raise ValueError(f"Unknown posemb type: {typ}")
 
@@ -175,58 +209,34 @@ class _Model(nn.Module):
   # image -> (n, 224, 224, 3)
   def __call__(self, image, *, train=False):
     out = {}
-    n = image.shape[0]
+    n, p, _, c = image.shape
 
-    image_128 = jmg.resize(image, (n, 128, 128, 3), "bilinear")
-    image_64 = jmg.resize(image, (n, 64, 64, 3), "bilinear")
-    image_32 = jmg.resize(image, (n, 32, 32, 3), "bilinear")
-    image_16 = jmg.resize(image, (n, 16, 16, 3), "bilinear")
+    # get images of all scales
+    initial, terminal = ceil(log(self.patch_size[0], 2)), ceil(log(p, 2))
+    scales = map(lambda x : 2 ** x, range(initial, terminal))
+    # [16, 32, 64, 128, 224]
+    images = [jmg.resize(image, (n, s, s, c), "bilinear") for s in scales] + [image]
 
-    # Patch extraction # out["stem"]
-    x_224 = nn.Conv(
+    # Patch extraction
+    x = out["stem"] = [nn.Conv(
       self.width, self.patch_size, strides=self.patch_size,
-      padding="VALID", name="embedding_224")(image)
-    x_128 = nn.Conv(
-      self.width, self.patch_size, strides=self.patch_size,
-      padding="VALID", name="embedding_128")(image_128)
-    x_64 = nn.Conv(
-      self.width, self.patch_size, strides=self.patch_size,
-      padding="VALID", name="embedding_64")(image_64)
-    x_32 = nn.Conv(
-      self.width, self.patch_size, strides=self.patch_size,
-      padding="VALID", name="embedding_32")(image_32)
-    x_16 = nn.Conv(
-      self.width, self.patch_size, strides=self.patch_size,
-      padding="VALID", name="embedding_16")(image_16)
+      padding="VALID", name=f"embedding_{image.shape[1]}")(image) for image in images]
 
-    # n -> n, h -> 14, w -> 14, c -> 768
-    # n, h, w, c = x.shape
-    # x.shape -> (n, 196, 768)
     # x = jnp.reshape(x, [n, h * w, c])
-    x_224 = jnp.reshape(x_224, (n, 14 * 14, self.width))
-    x_128 = jnp.reshape(x_128, (n, 8 * 8, self.width))
-    x_64 = jnp.reshape(x_64, (n, 4 * 4, self.width))
-    x_32 = jnp.reshape(x_32, (n, 2 * 2, self.width))
-    x_16 = jnp.reshape(x_16, (n, 1 * 1, self.width))
+    x = [jnp.reshape(p, (n, p.shape[1] ** 2, self.width)) for p in x]
+    # (n, 281, 768)  # 281 = 14 * 14 + 8 * 8 + 4 * 4 + 2 * 2 + 1 * 1
+    x = jnp.concatenate(x, axis=1)
 
     # Add posemb before adding extra token. # out["with_posemb"]
     # if "learn", self.param(name, normal, (1, 196, 768), dtype)
-    # if "sincos2d", same shape (1, 196, 768)
-    # x.shape -> (n, 196, 768)
-    x_224 += get_posemb(self, self.posemb, (14, 14), self.width, "pos_embedding_224", x_224.dtype)
-    x_128 += get_posemb(self, self.posemb, (8, 8), self.width, "pos_embedding_128", x_128.dtype)
-    x_64 += get_posemb(self, self.posemb, (4, 4), self.width, "pos_embedding_64", x_64.dtype)
-    x_32 += get_posemb(self, self.posemb, (2, 2), self.width, "pos_embedding_32", x_32.dtype)
-    x_16 += get_posemb(self, self.posemb, (1, 1), self.width, "pos_embedding_16", x_16.dtype)
-
-    # (n, 281, 768)  # 281 = 14 * 14 + 8 * 8 + 4 * 4 + 2 * 2 + 1 * 1
-    x = jnp.concatenate((x_16, x_32, x_64, x_128, x_224), axis=1)
+    # if "sincos2d" or "sincos1d", same shape (1, 196, 768)
+    x = out["with_posemb"] = x + get_posemb(self, self.posemb, x.shape, self.width, "with_posemb", x.dtype)
 
     if self.pool_type == "tok":
-      cls = self.param("cls", nn.initializers.zeros, (1, 1, c), x.dtype)
+      cls = self.param("cls", nn.initializers.zeros, (1, 1, self.width), x.dtype)
       x = jnp.concatenate([jnp.tile(cls, [n, 1, 1]), x], axis=1)
 
-    n, l, c = x.shape  # pylint: disable=unused-variable
+    # n, l, c = x.shape  # pylint: disable=unused-variable
     x = nn.Dropout(rate=self.dropout)(x, not train)
 
     x, out["encoder"] = Encoder(

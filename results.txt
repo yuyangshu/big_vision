@@ -3,21 +3,39 @@ val: 76.5%
 real: 83.1%
 v2: 64.2%
 
-workdirs/03-17_0351 | local execution parameters
+workdirs/03-17_0351 | local execution, 100 batch size, sincos2d positional embedding
 val: 69.96%
 real: 73.78%
 v2: 53.09%
 
-workdirs/03-23_0308 | remove positional encoding
+workdirs/03-23_0308 | local execution, 100 batch size, no positional embedding
 val: 60.5%
 real: 67.9%
 v2: 48.1%
 
-# tried learning rate 0.003, does not converge
+# tried learning rate 0.003, did not converge
 
-workdirs/04-09_0110 | patches + learned pos emb
+workdirs/04-09_0110 | patches, 80 batch size, learned positional emb
 val: 64.39%
 real: 72.14%
 v2: 51.59%
 
+workdirs/04-15_0046 | local execution, 80 batch size, learned positional embedding
+val: 64.9%
+real:72.7%
+v2: 52.1%
 
+workdirs/04-26_0003 | local execution, 80 batch size, sincos1d positional embedding
+val: 65.1%
+real: 73.1%
+v2: 52.4%
+
+workdirs/04-28_1536 | patches, 80 batch size, sincos1d positional embedding
+val: 64.9%
+real: 72.8%
+v2: 52.9%
+
+workdirs/05-01_2116 | patches, 80 batch size, sincos1d positional embedding, 2nd time
+val: 66.3%
+real: 74.2%
+v2:53.9%

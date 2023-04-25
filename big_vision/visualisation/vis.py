@@ -19,9 +19,11 @@ def parse(filename):
 if __name__ == "__main__":
     filename = sys.argv[1] if len(sys.argv) > 1 else "big_vision_metrics.txt"
 
+    # current model, blue
     x, y = parse(filename)
-    x = [x * 0.8 for x in x]
-    x_b, y_b = parse("baseline.txt")
+
+    # baseline, orange
+    x_b, y_b = parse("04-26_0003.txt")
 
     fig, ax = plt.subplots()
     ax.plot(x, y)
