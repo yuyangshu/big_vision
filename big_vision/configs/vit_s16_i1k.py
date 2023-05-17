@@ -44,9 +44,9 @@ def get_config():
       name='imagenet2012',
       split='train[:99%]',
   )
-  config.input.batch_size = 80  # 1024 => jaxlib.xla_extension.XlaRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 85401566312 bytes.
-  config.input.cache_raw = False  # Needs up to 120GB of RAM!
-  config.input.shuffle_buffer_size = 25_000  # 250_000 => [systemd-oomd] Killed /user.slice/user-1000.slice/user@1000.service/app.slice/app-org.gnome.Terminal.slice/vte-spawn-9ac63419-18d4-4ff6-8e87-f0169924cfd0.scope due to memory pressure for /user.slice/user-1000.slice/user@1000.service being 58.50% > 50.00% for > 20s with reclaim activity
+  config.input.batch_size = 1024
+  config.input.cache_raw = True  # Needs up to 120GB of RAM!
+  config.input.shuffle_buffer_size = 250_000
 
   pp_common = (
       '|value_range(-1, 1)'
@@ -59,8 +59,8 @@ def get_config():
   )
   pp_eval = 'decode|resize_small(256)|central_crop(224)' + pp_common
 
-  config.log_training_steps = 100  # 50
-  config.ckpt_steps = 10000  # 1000
+  config.log_training_steps = 50
+  config.ckpt_steps = 1000
 
   # Model section
   config.model_name = 'vit'
@@ -89,8 +89,7 @@ def get_config():
         data=dict(name=dataset, split=split),
         pp_fn=pp_eval.format(lbl='label'),
         loss_name=config.loss,
-        # log_steps=2500,  # Very fast O(seconds) so it's fine to run it often.
-        log_steps=25_000,  # evaluation takes much longer with 32G of RAM
+        log_steps=2500,  # Very fast O(seconds) so it's fine to run it often.
     )
   config.evals = {}
   config.evals.train = get_eval('train[:2%]')

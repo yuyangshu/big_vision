@@ -35,54 +35,29 @@ import scipy.ndimage
 
 def posemb_sincos_2d(h, w, width, temperature=10_000., dtype=jnp.float32):
   """Follows the MoCo v3 logic."""
-  assert width % 4 == 0, "Width must be mult of 4 for sincos posemb"
-
-  # (14, 14) when image -> (224, 224, 3)
   y, x = jnp.mgrid[:h, :w]
 
-  # (192,)
+  assert width % 4 == 0, "Width must be mult of 4 for sincos posemb"
   omega = jnp.arange(width // 4) / (width // 4 - 1)
   omega = 1. / (temperature**omega)
 
-  # (196, 192)
   y = jnp.einsum("m,d->md", y.flatten(), omega)
   x = jnp.einsum("m,d->md", x.flatten(), omega)
 
-  # (196, 768)
   pe = jnp.concatenate([jnp.sin(x), jnp.cos(x), jnp.sin(y), jnp.cos(y)], axis=1)
 
-  # (1, 196, 768)
   return jnp.asarray(pe, dtype)[None, :, :]
 
 
 def posemb_sincos_1d(l, width, temperature=10_000., dtype=jnp.float32):
   """Follows attention is all you need"""
   def P(v):
-    # v: [15, 15, ..., 15], (768,)
-
-    # [0, 1, ... 767]
     index = jnp.arange(width)
-    # [0, 0, , 0.0026, 0.0026, ..., 0.9974, 0.9974]
-    # 0.0026 = 2 / 768, 0.9974 = 766/768
-    # y = 2 * jnp.right_shift(index, 1) / width
-    # [15, 15, 14.6445, 14.6445, ..., 0.0015, 0.0015]
     y = v / temperature ** (2 * jnp.right_shift(index, 1) / width)
-
-    # [0.65028787 -0.7596879   0.8740425  -0.48584944, ..., 0.00153641  0.9999988]
     return lax.select(jnp.bitwise_and(index, 1), jnp.cos(y), jnp.sin(y))
 
-  # x [[  0   0   0 ...   0   0   0]
-  #  [  1   1   1 ...   1   1   1]
-  #  ...
-  #  [280 280 280 ... 280 280 280]] (281, 768)
   x = jnp.mgrid[:l, :width][0]
-
-  # sin(15/(10000^(2/768))) = 0.87404262115
-  # pe[15] = [ 0.65028787 -0.7596879   0.8740425  -0.48584944, ..., 0.00153641  0.9999988 ], (281, 768)
-  pe = jnp.apply_along_axis(P, 1, x)
-
-  # (1, 281, 768)
-  return jnp.asarray(pe, dtype)[None, :, :]
+  return jnp.asarray(jnp.apply_along_axis(P, 1, x), dtype)[None, :, :]
 
 
 def get_posemb(self, typ, seqshape, width, name, dtype=jnp.float32):
@@ -206,7 +181,6 @@ class _Model(nn.Module):
   head_zeroinit: bool = True
 
   @nn.compact
-  # image -> (n, 224, 224, 3)
   def __call__(self, image, *, train=False):
     out = {}
     n, p, _, c = image.shape
@@ -214,7 +188,6 @@ class _Model(nn.Module):
     # get images of all scales
     initial, terminal = ceil(log(self.patch_size[0], 2)), ceil(log(p, 2))
     scales = map(lambda x : 2 ** x, range(initial, terminal))
-    # [16, 32, 64, 128, 224]
     images = [jmg.resize(image, (n, s, s, c), "bilinear") for s in scales] + [image]
 
     # Patch extraction
@@ -222,21 +195,16 @@ class _Model(nn.Module):
       self.width, self.patch_size, strides=self.patch_size,
       padding="VALID", name=f"embedding_{image.shape[1]}")(image) for image in images]
 
-    # x = jnp.reshape(x, [n, h * w, c])
     x = [jnp.reshape(p, (n, p.shape[1] ** 2, self.width)) for p in x]
-    # (n, 281, 768)  # 281 = 14 * 14 + 8 * 8 + 4 * 4 + 2 * 2 + 1 * 1
     x = jnp.concatenate(x, axis=1)
 
-    # Add posemb before adding extra token. # out["with_posemb"]
-    # if "learn", self.param(name, normal, (1, 196, 768), dtype)
-    # if "sincos2d" or "sincos1d", same shape (1, 196, 768)
+    # Add posemb before adding extra token.
     x = out["with_posemb"] = x + get_posemb(self, self.posemb, x.shape, self.width, "with_posemb", x.dtype)
 
     if self.pool_type == "tok":
       cls = self.param("cls", nn.initializers.zeros, (1, 1, self.width), x.dtype)
       x = jnp.concatenate([jnp.tile(cls, [n, 1, 1]), x], axis=1)
 
-    # n, l, c = x.shape  # pylint: disable=unused-variable
     x = nn.Dropout(rate=self.dropout)(x, not train)
 
     x, out["encoder"] = Encoder(
@@ -261,23 +229,18 @@ class _Model(nn.Module):
     else:
       raise ValueError(f"Unknown pool type: '{self.pool_type}'")
 
-    # x_2d = jnp.reshape(encoded, [n, h, w, -1])
-
     if self.rep_size:
       rep_size = self.width if self.rep_size is True else self.rep_size
       hid = nn.Dense(rep_size, name="pre_logits")
       # NOTE: In the past we did not include tanh in pre_logits.
       # For few-shot, it should not matter much, as it whitens anyways.
-      # x_2d = nn.tanh(hid(x_2d))
       x = nn.tanh(hid(x))
 
-    # out["pre_logits_2d"] = x_2d
     out["pre_logits"] = x
 
     if self.num_classes:
       kw = {"kernel_init": nn.initializers.zeros} if self.head_zeroinit else {}
       head = nn.Dense(self.num_classes, name="head", **kw)
-      # x_2d = out["logits_2d"] = head(x_2d)
       x = out["logits"] = head(x)
 
     return x, out

@@ -35,7 +35,37 @@ val: 64.9%
 real: 72.8%
 v2: 52.9%
 
-workdirs/05-01_2116 | patches, 80 batch size, sincos1d positional embedding, 2nd time
+workdirs/05-01_2116 | patches, 80 batch size, sincos1d positional embedding, 2nd run
 val: 66.3%
 real: 74.2%
 v2:53.9%
+
+workdirs/05-20_1444 | patches, 1024 batch size, sincos1d positional embedding, tpu execution
+val: 76.05%
+real: 82.80%
+v2: 63.74%
+
+workdirs/05-21_0247 | patches, 1024 batch size, sincos1d positional embedding, tpu execution, 2nd run
+val: 76.21%
+real: 82.86%
+v2: 63.94%
+
+workdirs/05-21_1253 | patches, 1024 batch size, sincos1d positional embedding, tpu execution, 3rd run
+val: 75.89%
+real: 82.68%
+v2: 63.94%
+
+workdirs/05-23_0956 | 1024 batch size, sincos1d positional embedding, tpu execution
+val: 76.10%
+real: 82.95%
+v2: 64.21%
+
+workdirs/05-23_1630 | 1024 batch size, sincos1d positional embedding, tpu execution, 2nd run
+val: 75.85%
+real: 82.54%
+v2: 64.12%
+
+workdirs/05-24_0152 | 1024 batch size, sincos1d positional embedding, tpu execution, 3rd run
+val: 76.18%
+real: 82.93%
+v2: 63.68%
