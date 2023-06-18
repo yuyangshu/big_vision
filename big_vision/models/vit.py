@@ -60,7 +60,27 @@ def posemb_sincos_1d(l, width, temperature=10_000., dtype=jnp.float32):
   return jnp.asarray(jnp.apply_along_axis(P, 1, x), dtype)[None, :, :]
 
 
-def get_posemb(self, typ, seqshape, width, name, dtype=jnp.float32):
+def posemb_mean_sincos_2d(input_size, patch_size, width, scales, temperature=10_000., dtype=jnp.float32):
+  h = w = input_size // patch_size
+  base_emb = posemb_sincos_2d(h, w, width, temperature, dtype)
+  emb_2d = jnp.reshape(base_emb, [h, w, -1])
+
+  # fill the embeddings into an image sized matrix
+  f = lambda i, j, k: emb_2d[i // patch_size, j // patch_size, k]
+  img = jnp.vectorize(f)(*jnp.indices((input_size, input_size, width)))
+
+  # calculate weighted embedding for each scale
+  mean_embs = []
+  for scale in scales:
+    h = scale // patch_size
+    f = lambda x: jnp.asarray(jnp.split(x, h, axis=1))
+    emb_at_scale = f(f(img))
+    mean_embs.append(emb_at_scale.mean(axis=(2, 3)))
+
+  return jnp.concatenate([jnp.reshape(x, (-1, width)) for x in mean_embs + [base_emb]])
+
+
+def get_posemb(self, typ, seqshape, width, name, dtype=jnp.float32, scales=None):
   if typ == "learn":
     return self.param(name, nn.initializers.normal(stddev=1/np.sqrt(width)),
                       (1, np.prod(seqshape), width), dtype)
@@ -68,6 +88,8 @@ def get_posemb(self, typ, seqshape, width, name, dtype=jnp.float32):
     return posemb_sincos_2d(*seqshape, width, dtype=dtype)
   elif typ == "sincos1d":
     return posemb_sincos_1d(seqshape[1], width, dtype=dtype)
+  elif typ == "mean_sincos2d":
+    return posemb_mean_sincos_2d(seqshape, self.patch_size[0], width, scales, dtype=dtype)
   else:
     raise ValueError(f"Unknown posemb type: {typ}")
 
@@ -188,6 +210,7 @@ class _Model(nn.Module):
     # get images of all scales
     initial, terminal = ceil(log(self.patch_size[0], 2)), ceil(log(p, 2))
     scales = map(lambda x : 2 ** x, range(initial, terminal))
+    logging.info(f"scales: {[x for x in scales]}")
     images = [jmg.resize(image, (n, s, s, c), "bilinear") for s in scales] + [image]
 
     # Patch extraction
@@ -199,7 +222,7 @@ class _Model(nn.Module):
     x = jnp.concatenate(x, axis=1)
 
     # Add posemb before adding extra token.
-    x = out["with_posemb"] = x + get_posemb(self, self.posemb, x.shape, self.width, "with_posemb", x.dtype)
+    x = out["with_posemb"] = x + get_posemb(self, self.posemb, p, self.width, "with_posemb", x.dtype, scales=scales)
 
     if self.pool_type == "tok":
       cls = self.param("cls", nn.initializers.zeros, (1, 1, self.width), x.dtype)

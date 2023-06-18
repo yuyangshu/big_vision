@@ -3,69 +3,79 @@ val: 76.5%
 real: 83.1%
 v2: 64.2%
 
-workdirs/03-17_0351 | local execution, 100 batch size, sincos2d positional embedding
+03-17_0351 | local execution, 100 batch size, sincos2d positional embedding
 val: 69.96%
 real: 73.78%
 v2: 53.09%
 
-workdirs/03-23_0308 | local execution, 100 batch size, no positional embedding
+03-23_0308 | local execution, 100 batch size, no positional embedding
 val: 60.5%
 real: 67.9%
 v2: 48.1%
 
 # tried learning rate 0.003, did not converge
 
-workdirs/04-09_0110 | patches, 80 batch size, learned positional emb
+04-09_0110 | patches, 80 batch size, learned positional emb
 val: 64.39%
 real: 72.14%
 v2: 51.59%
 
-workdirs/04-15_0046 | local execution, 80 batch size, learned positional embedding
+04-15_0046 | local execution, 80 batch size, learned positional embedding
 val: 64.9%
 real:72.7%
 v2: 52.1%
 
-workdirs/04-26_0003 | local execution, 80 batch size, sincos1d positional embedding
+04-26_0003 | local execution, 80 batch size, sincos1d positional embedding
 val: 65.1%
 real: 73.1%
 v2: 52.4%
 
-workdirs/04-28_1536 | patches, 80 batch size, sincos1d positional embedding
+04-28_1536 | patches, 80 batch size, sincos1d positional embedding
 val: 64.9%
 real: 72.8%
 v2: 52.9%
 
-workdirs/05-01_2116 | patches, 80 batch size, sincos1d positional embedding, 2nd run
+05-01_2116 | patches, 80 batch size, sincos1d positional embedding, 2nd run
 val: 66.3%
 real: 74.2%
 v2:53.9%
 
-workdirs/05-20_1444 | patches, 1024 batch size, sincos1d positional embedding, tpu execution
+05-20_1444 | patches, 1024 batch size, sincos1d positional embedding, tpu execution
 val: 76.05%
 real: 82.80%
 v2: 63.74%
 
-workdirs/05-21_0247 | patches, 1024 batch size, sincos1d positional embedding, tpu execution, 2nd run
+05-21_0247 | patches, 1024 batch size, sincos1d positional embedding, tpu execution, 2nd run
 val: 76.21%
 real: 82.86%
 v2: 63.94%
 
-workdirs/05-21_1253 | patches, 1024 batch size, sincos1d positional embedding, tpu execution, 3rd run
+05-21_1253 | patches, 1024 batch size, sincos1d positional embedding, tpu execution, 3rd run
 val: 75.89%
 real: 82.68%
 v2: 63.94%
 
-workdirs/05-23_0956 | 1024 batch size, sincos1d positional embedding, tpu execution
+05-23_0956 | 1024 batch size, sincos1d positional embedding, tpu execution
 val: 76.10%
 real: 82.95%
 v2: 64.21%
 
-workdirs/05-23_1630 | 1024 batch size, sincos1d positional embedding, tpu execution, 2nd run
+05-23_1630 | 1024 batch size, sincos1d positional embedding, tpu execution, 2nd run
 val: 75.85%
 real: 82.54%
 v2: 64.12%
 
-workdirs/05-24_0152 | 1024 batch size, sincos1d positional embedding, tpu execution, 3rd run
+05-24_0152 | 1024 batch size, sincos1d positional embedding, tpu execution, 3rd run
 val: 76.18%
 real: 82.93%
 v2: 63.68%
+
+06-19_0023 | patches, 80 batch size, mean sincos2d positional embedding
+val: 66.60%
+real: 74.59%
+v2: 54.18%
+
+06-21_0234 | patches, 80 batch size, mean sincos2d positional embedding, 2nd run
+val: 66.37%
+real: 74.25%
+v2: 53.96%
