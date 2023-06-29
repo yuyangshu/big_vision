@@ -73,9 +73,14 @@ def posemb_mean_sincos_2d(input_size, patch_size, width, scales, temperature=10_
   mean_embs = []
   for scale in scales:
     h = scale // patch_size
+    # field_size = input_size // h
+    # ratio = field_size / patch_size
+    ratio = input_size / scale
     f = lambda x: jnp.asarray(jnp.split(x, h, axis=1))
     emb_at_scale = f(f(img))
-    mean_embs.append(emb_at_scale.mean(axis=(2, 3)))
+    # mean_embs.append(emb_at_scale.mean(axis=(2, 3)))
+    mean_embs.append(emb_at_scale.mean(axis=(2, 3)) * jnp.sqrt(ratio))
+    # mean_embs.append(emb_at_scale.mean(axis=(2, 3)) * ratio)
 
   return jnp.concatenate([jnp.reshape(x, (-1, width)) for x in mean_embs + [base_emb]])
 

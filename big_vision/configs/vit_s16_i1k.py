@@ -47,6 +47,9 @@ def get_config():
   config.input.batch_size = 1024
   config.input.cache_raw = True  # Needs up to 120GB of RAM!
   config.input.shuffle_buffer_size = 250_000
+#   config.input.batch_size = 80
+#   config.input.cache_raw = False  # Needs up to 120GB of RAM!
+#   config.input.shuffle_buffer_size = 25_000
 
   pp_common = (
       '|value_range(-1, 1)'
@@ -61,6 +64,9 @@ def get_config():
 
   config.log_training_steps = 50
   config.ckpt_steps = 1000
+#   config.log_training_steps = 100
+#   config.ckpt_steps = 10000
+
 
   # Model section
   config.model_name = 'vit'
@@ -90,6 +96,7 @@ def get_config():
         pp_fn=pp_eval.format(lbl='label'),
         loss_name=config.loss,
         log_steps=2500,  # Very fast O(seconds) so it's fine to run it often.
+        # log_steps=25000,  # Very fast O(seconds) so it's fine to run it often.
     )
   config.evals = {}
   config.evals.train = get_eval('train[:2%]')

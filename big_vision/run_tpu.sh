@@ -23,7 +23,8 @@ then
 
   pip install -U pip  # Yes, really needed.
   # NOTE: doesn't work when in requirements.txt -> cyclic dep
-  pip install "jax[tpu]>=0.2.16" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+  # need to freeze jax version, same symptom as https://github.com/google-research/scenic/issues/816
+  pip install "jax[tpu]==0.4.6" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
   pip install -r big_vision/requirements.txt
 else
   . bv_venv/bin/activate

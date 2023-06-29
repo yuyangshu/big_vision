@@ -79,3 +79,38 @@ v2: 54.18%
 val: 66.37%
 real: 74.25%
 v2: 53.96%
+
+06-25_0404 | patches, 80 batch size, sqrt edge length scale mean sincos2d positional embedding
+val: 66.68%
+real: 74.61%
+v2: 54.09%
+
+06-27_0900 | patches, 80 batch size, sqrt edge length scale mean sincos2d positional embedding, 2nd run
+val: 65.87%
+real: 73.86%
+v2: 53.49%
+
+06-29_2220 | patches, 80 batch size, edge length scale mean sincos2d positional embedding
+val: 66.19%
+real: 74.06%
+v2: 53.73%
+
+07-02_1023 | patches, 80 batch size, edge length scale mean sincos2d positional embedding, 2nd run
+val: 65.91%
+real: 73.97%
+v2: 53.46%
+
+07-05_0111 | patches, 1024 batch size, mean sincos2d positional embedding, tpu execution
+val: 76.51%
+real: 83.08%
+v2: 64.56%
+
+07-05_1833 | patches, 1024 batch size, sqrt edge length scale mean sincos2d positional embedding, tpu execution
+val: 76.34%
+real: 82.94%
+v2: 64.24%
+
+07-06_0142 | patches, 1024 batch size, edge length scale mean sincos2d positional embedding, tpu execution
+val: 76.51%
+real: 83.11%
+v2: 64.39%
