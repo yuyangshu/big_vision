@@ -23,7 +23,7 @@ if __name__ == "__main__":
     x, y = parse(filename)
 
     # baseline, orange
-    x_b, y_b = parse("04-26_0003.txt")
+    x_b, y_b = parse("07-05_0111.txt")
 
     fig, ax = plt.subplots()
     ax.plot(x, y)

@@ -1,5 +1,5 @@
 # export PROJECT_ID=vit-test-ys
-export PROJECT_ID=test
+export PROJECT_ID=test-154352
 
 # configure gcloud cli
 gcloud config set account $EMAIL
@@ -12,8 +12,7 @@ gcloud services enable tpu.googleapis.com
 # https://cloud.google.com/tpu/docs/storage-buckets
 # this principal is not visible from the console; after creation need to grant bucket permission
 gcloud beta services identity create --service tpu.googleapis.com --project $PROJECT_ID
-# Service identity created: service-969988812741@cloud-tpu.iam.gserviceaccount.com
-# Service identity created: service-695580597349@cloud-tpu.iam.gserviceaccount.com
+# Service identity created: service-336776916729@cloud-tpu.iam.gserviceaccount.com
 
 
 # copy training data
@@ -40,6 +39,7 @@ export ZONE=europe-west4-a
 
 # create TPU VM
 # gcloud compute tpus tpu-vm create $VM_NAME --zone=$ZONE --accelerator-type=v4-8 --version=tpu-vm-v4-base --preemptible
+# gcloud compute tpus tpu-vm create $VM_NAME --zone=$ZONE --accelerator-type=v3-32 --version=tpu-vm-base
 gcloud compute tpus tpu-vm create $VM_NAME --zone=$ZONE --accelerator-type=v3-8 --version=tpu-vm-base --preemptible
 
 # check created/preempted/deleted
@@ -51,6 +51,7 @@ gcloud compute tpus tpu-vm list --zone=$ZONE
 gcloud compute tpus tpu-vm scp --recurse big_vision/big_vision $VM_NAME: --zone=$ZONE --worker=all
 
 # train
+# gcloud compute tpus tpu-vm ssh $VM_NAME --zone=$ZONE --worker=all --command "TFDS_DATA_DIR=gs://$BUCKET_NAME/tensorflow_datasets bash big_vision/run_tpu.sh big_vision.train --config big_vision/configs/vit_s16_i1k.py --workdir gs://$BUCKET_NAME/workdirs/09-04_2156"
 gcloud compute tpus tpu-vm ssh $VM_NAME --zone=$ZONE --worker=all --command "TFDS_DATA_DIR=gs://$BUCKET_NAME/tensorflow_datasets bash big_vision/run_tpu.sh big_vision.train --config big_vision/configs/vit_s16_i1k.py --workdir gs://$BUCKET_NAME/workdirs/`date '+%m-%d_%H%M'`"
 
 # clean up

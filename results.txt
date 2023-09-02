@@ -114,3 +114,8 @@ v2: 64.24%
 val: 76.51%
 real: 83.11%
 v2: 64.39%
+
+09-04_2156 | patches + conv, 1024 batch size, mean sincos2d positional embedding, tpu execution
+val: 79.79%
+real: 85.68%
+v2: 68.45%

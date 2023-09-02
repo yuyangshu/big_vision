@@ -85,6 +85,37 @@ def posemb_mean_sincos_2d(input_size, patch_size, width, scales, temperature=10_
   return jnp.concatenate([jnp.reshape(x, (-1, width)) for x in mean_embs + [base_emb]])
 
 
+def posemb_conv(input_size, patch_size, width, scales, temperature=10_000., dtype=jnp.float32):
+  # on tpuv3-8 getting OOM
+  # jaxlib.xla_extension.XlaRuntimeError: RESOURCE_EXHAUSTED: XLA:TPU compile permanent error.
+  # Ran out of memory in memory space hbm. Used 25.21G of 15.48G hbm. Exceeded hbm capacity by 9.72G.
+
+  h = w = input_size // patch_size # 14
+  base_emb = posemb_sincos_2d(h, w, width, temperature, dtype) # (1, 196, 768)
+  emb_2d = jnp.reshape(base_emb, [h, w, -1]) # (14, 14, 768)
+
+  # fill the embeddings into an image sized matrix
+  f = lambda i, j, k: emb_2d[i // patch_size, j // patch_size, k]
+  img = jnp.vectorize(f)(*jnp.indices((input_size, input_size, width))) # (224, 224, 768)
+
+  # calculate weighted embedding for each scale
+  kernel_size, stride = 16, 8
+  mean_embs = []
+  for scale in scales + [input_size]: # [16, 32, 64, 128, 224]
+    h = scale // kernel_size # [2, 4, 8, 16, 28]
+    field_size = input_size // h # [112, 56, 28, 14, 8]
+    step = field_size * stride // kernel_size # [56, 28, 14, 7, 4]
+    logging.info(f"scale: {scale}, h: {h}, field_size: {field_size}, step: {step}")
+
+    for i in range(0, input_size - field_size + 1, step):
+      for j in range(0, input_size - field_size + 1, step):
+        patch = lax.dynamic_slice(img, (i, j, 0), (field_size, field_size, width)) # (56, 56, 768)
+        mean_embs.append(patch.mean(axis=(0, 1))) # (4269, 768) | 9, 58, 283, 1244, 4269
+
+  logging.info(len(mean_embs))
+  # expected shape: (n, 4269, 768)
+  return jnp.asarray(mean_embs)
+
 def get_posemb(self, typ, seqshape, width, name, dtype=jnp.float32, scales=None):
   if typ == "learn":
     return self.param(name, nn.initializers.normal(stddev=1/np.sqrt(width)),
@@ -95,6 +126,8 @@ def get_posemb(self, typ, seqshape, width, name, dtype=jnp.float32, scales=None)
     return posemb_sincos_1d(seqshape[1], width, dtype=dtype)
   elif typ == "mean_sincos2d":
     return posemb_mean_sincos_2d(seqshape, self.patch_size[0], width, scales, dtype=dtype)
+  elif typ == "conv_sincos":
+    return posemb_conv(seqshape, self.patch_size[0], width, scales, dtype=dtype)
   else:
     raise ValueError(f"Unknown posemb type: {typ}")
 
@@ -210,21 +243,26 @@ class _Model(nn.Module):
   @nn.compact
   def __call__(self, image, *, train=False):
     out = {}
-    n, p, _, c = image.shape
+    n, p, _, c = image.shape # n, 224, 224, 3
 
     # get images of all scales
     initial, terminal = ceil(log(self.patch_size[0], 2)), ceil(log(p, 2))
-    scales = map(lambda x : 2 ** x, range(initial, terminal))
-    logging.info(f"scales: {[x for x in scales]}")
+    scales = map(lambda x : 2 ** x, range(initial, terminal)) # 16, 32, 64, 128
+    scales = [x for x in scales]
+    # logging.info(f"scales: {[x for x in scales]}")
     images = [jmg.resize(image, (n, s, s, c), "bilinear") for s in scales] + [image]
 
     # Patch extraction
+    kernel_size, stride = 16, 8
+    # previously [(n, 1, 1, 768), (n, 2, 2, 768), (n, 4, 4, 768), (n, 8, 8, 768), (n, 14, 14, 768)]
+    # now [(n, 3, 3, 768), (n, 7, 7, 768), (n, 15, 15, 768), (n, 31, 31, 768), (n, 55, 55, 768)]
     x = out["stem"] = [nn.Conv(
-      self.width, self.patch_size, strides=self.patch_size,
+      self.width, (kernel_size, kernel_size), strides=stride,
       padding="VALID", name=f"embedding_{image.shape[1]}")(image) for image in images]
 
+    # [(n, 9, 768), (n, 49, 768), (n, 225, 768), (n, 961, 768), (n, 3025, 768)]
     x = [jnp.reshape(p, (n, p.shape[1] ** 2, self.width)) for p in x]
-    x = jnp.concatenate(x, axis=1)
+    x = jnp.concatenate(x, axis=1) # (n, 4269, 768)
 
     # Add posemb before adding extra token.
     x = out["with_posemb"] = x + get_posemb(self, self.posemb, p, self.width, "with_posemb", x.dtype, scales=scales)
