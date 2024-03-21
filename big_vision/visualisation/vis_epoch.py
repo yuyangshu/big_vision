@@ -1,4 +1,5 @@
 import json
+import math
 import matplotlib.pyplot as plt
 import sys
 
@@ -10,7 +11,9 @@ def parse(filename):
         for line in f.readlines():
             entry = json.loads(line)
             if (r"val/prec@1") in entry:
-                steps.append(entry["step"])
+                step = entry["step"]
+                epoch = math.floor(step / 111477 * 90)
+                steps.append(epoch)
                 accuracy.append(entry[r"val/prec@1"])
 
     return steps, accuracy
@@ -26,7 +29,12 @@ if __name__ == "__main__":
     x_b, y_b = parse("07-05_0111.txt")
 
     fig, ax = plt.subplots()
-    ax.plot(x, y)
-    ax.plot(x_b, y_b)
+    ax.plot(x, y, label="Retina ViT")
+    ax.plot(x_b, y_b, label="ViT")
 
-    plt.savefig(f"{filename.split('.')[0]}-compare.png")
+    plt.xlabel("Epoch")
+    plt.ylabel("Top-1 prediction accuracy")
+    plt.xticks(range(0, 91, 10))
+    plt.legend(loc="lower right")
+
+    plt.savefig(f"{filename.split('.')[0]}-epoch.png")
